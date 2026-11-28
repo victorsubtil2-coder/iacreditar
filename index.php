@@ -57,8 +57,20 @@ curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
 curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
 $responseBody = curl_exec($ch);
 $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+$curlErrno = curl_errno($ch);
+$curlError = curl_error($ch);
 curl_close($ch);
-if ($responseBody === false || $status < 200 || $status >= 300) respond(502, array('ok' => false, 'error' => 'upstream_error'));
+if ($responseBody === false) {
+    // Log diagnostics on Render without exposing credentials or player messages.
+    error_log('[IAcreditar] OpenAI transport failure: curl_errno=' . $curlErrno . '; http_status=' . $status . '; curl_error=' . $curlError);
+    respond(502, array('ok' => false, 'error' => 'upstream_error'));
+}
+if ($status < 200 || $status >= 300) {
+    // OpenAI error bodies contain diagnostic information, not the API key.
+    $diagnosticBody = substr((string) $responseBody, 0, 2000);
+    error_log('[IAcreditar] OpenAI HTTP failure: http_status=' . $status . '; response=' . $diagnosticBody);
+    respond(502, array('ok' => false, 'error' => 'upstream_error'));
+}
 $response = json_decode($responseBody, true);
 if (!is_array($response)) respond(502, array('ok' => false, 'error' => 'invalid_upstream_response'));
 $text = '';
